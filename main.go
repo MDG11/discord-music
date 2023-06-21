@@ -11,6 +11,7 @@ import (
 
 	"github.com/bwmarrin/dgvoice"
 	"github.com/bwmarrin/discordgo"
+	"github.com/joho/godotenv"
 )
 
 var (
@@ -104,7 +105,8 @@ var (
 )
 
 func main() {
-	token := "MTEyMDA2NjAzODYwMDU3MzAyOA.G_hk74.aLLhlhg6las6FdG4-USWP4HxqNDjlQWvLFVUEA"
+	godotenv.Load()
+	token := os.Getenv("DISCORD_TOKEN")
 	sess, err := discordgo.New("Bot " + token)
 	if err != nil {
 		panic(err)
