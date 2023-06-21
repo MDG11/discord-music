@@ -1,7 +1,11 @@
 package main
 
 import (
+	"MDG11/discord-music/youtube"
+	"errors"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 
@@ -33,6 +37,18 @@ var (
 			Name:        "join",
 			Description: "Join voice channel",
 		},
+		{
+			Name:        "play",
+			Description: "Play a song",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:        "url",
+					Description: "Song url",
+					Required:    true,
+					Type:        discordgo.ApplicationCommandOptionString,
+				},
+			},
+		},
 	}
 
 	handlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
@@ -53,18 +69,7 @@ var (
 			})
 		},
 		"join": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			guild, _ := s.State.Guild(i.GuildID)
-
-			for _, voice := range guild.VoiceStates {
-				if voice.UserID == i.Member.User.ID {
-					dgv, err := s.ChannelVoiceJoin(i.GuildID, voice.ChannelID, false, false)
-					if err != nil {
-						log.Fatalf("Cant join %s", err)
-					}
-					currentVoiceState = dgv
-				}
-			}
-
+			joinVoice(s, i)
 			dgvoice.PlayAudioFile(currentVoiceState, "./tracks/song.mp3", make(chan bool))
 
 			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -73,6 +78,27 @@ var (
 					Content: "Joined the voice channel!",
 				},
 			})
+		},
+		"play": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+			url := i.ApplicationCommandData().Options[0].Value.(string)
+
+			joinVoice(s, i)
+			streamUrl := youtube.GetStreamUrl(url)
+			// response, err := http.Get(streamUrl)
+			// if err != nil {
+			// 	log.Fatal(err)
+			// }
+
+			os.Remove("./tracks/song.mp3")
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "Successfully queued a song!",
+				},
+			})
+			downloadFile(streamUrl, "./tracks/song.mp3")
+			log.Println("downloaded")
+			dgvoice.PlayAudioFile(currentVoiceState, "./tracks/song.mp3", make(chan bool))
 		},
 	}
 )
@@ -111,4 +137,43 @@ func main() {
 	<-stop
 
 	log.Println("Shutting down!")
+}
+
+func joinVoice(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guild, _ := s.State.Guild(i.GuildID)
+
+	for _, voice := range guild.VoiceStates {
+		if voice.UserID == i.Member.User.ID {
+			dgv, err := s.ChannelVoiceJoin(i.GuildID, voice.ChannelID, false, false)
+			if err != nil {
+				log.Fatalf("Cant join %s", err)
+			}
+			currentVoiceState = dgv
+		}
+	}
+}
+
+func downloadFile(URL, fileName string) error {
+	response, err := http.Get(URL)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
+		return errors.New("Received non 200 response code")
+	}
+
+	file, err := os.Create(fileName)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, response.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
